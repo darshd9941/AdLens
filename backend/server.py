@@ -228,7 +228,7 @@ async def simulate(
     simulation = simulate_india_performance(analysis, industry, dailyBudget)
     ab_tests = generate_ab_tests(analysis)
     posting = get_best_posting_times(industry)
-    report = generate_report(simulation, simulation, ab_tests, posting)
+    report = generate_report(simulation, ab_tests, posting)
     return to_native({
         "simulation": simulation,
         "abTests": ab_tests,
