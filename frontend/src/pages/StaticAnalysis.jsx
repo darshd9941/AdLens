@@ -1,42 +1,71 @@
 import { useState } from 'react'
-import { Loader2, RotateCcw, Shield, MessageSquare } from 'lucide-react'
+import { Loader2, RotateCcw, Eye, ArrowRight } from 'lucide-react'
 import UploadZone from '../components/UploadZone'
 import ScoreCard from '../components/ScoreCard'
 import HeatmapOverlay from '../components/HeatmapOverlay'
-import CreativeDNA from '../components/CreativeDNA'
-import CopyAnalysis from '../components/CopyAnalysis'
-import { uploadImage, checkCompliance } from '../utils/api'
+import { uploadImage } from '../utils/api'
+
+function EyeTrackingPath({ steps }) {
+  if (!steps || steps.length === 0) return null
+  return (
+    <div className="bg-surface border border-border rounded-xl p-4">
+      <h4 className="text-xs text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+        <Eye className="w-4 h-4" /> Eye Tracking Path
+      </h4>
+      <div className="space-y-2">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center text-white text-xs font-bold shrink-0">
+              {i + 1}
+            </div>
+            <div className="flex-1 text-sm">{step}</div>
+            {i < steps.length - 1 && (
+              <ArrowRight className="w-3 h-3 text-muted shrink-0" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ColorPalette({ colors }) {
+  if (!colors || colors.length === 0) return null
+  return (
+    <div className="bg-surface border border-border rounded-xl p-4">
+      <h4 className="text-xs text-muted uppercase tracking-wider mb-3">Color Palette</h4>
+      <div className="flex gap-2 flex-wrap">
+        {colors.map((c, i) => (
+          <div key={i} className="flex flex-col items-center gap-1">
+            <div
+              className="w-10 h-10 rounded-lg border border-border"
+              style={{ background: c.hex || c }}
+            />
+            <span className="text-[10px] text-muted">{c.hex || c}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function StaticAnalysis() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [preview, setPreview] = useState(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
-  const [compliance, setCompliance] = useState(null)
-  const [copyText, setCopyText] = useState('')
-  const [file, setFile] = useState(null)
+  const [error, setError] = useState(null)
 
-  const handleFile = (f) => {
-    setFile(f)
-    setPreview(URL.createObjectURL(f))
-    setResult(null)
-    setCompliance(null)
-  }
-
-  const handleAnalyze = async () => {
-    if (!file) return
+  const handleFile = async (file) => {
+    setPreview(URL.createObjectURL(file))
     setLoading(true)
     setResult(null)
-    setCompliance(null)
+    setError(null)
     try {
-      const res = await uploadImage(file, copyText)
+      const res = await uploadImage(file)
       setResult(res.data)
-      try {
-        const comp = await checkCompliance(file)
-        setCompliance(comp.data)
-      } catch {}
     } catch (err) {
-      console.error(err)
+      setError(err.response?.data?.error || 'Analysis failed. Is Ollama running with gemma4?')
     }
     setLoading(false)
   }
@@ -44,17 +73,15 @@ export default function StaticAnalysis() {
   const handleReset = () => {
     setPreview(null)
     setResult(null)
-    setCompliance(null)
     setShowHeatmap(true)
-    setCopyText('')
-    setFile(null)
+    setError(null)
   }
 
   if (!preview) {
     return (
       <div className="p-8 max-w-2xl mx-auto">
         <h2 className="text-xl font-bold mb-1">Analyze Static Ad</h2>
-        <p className="text-sm text-muted mb-6">Upload an image to get AI-powered creative analysis</p>
+        <p className="text-sm text-muted mb-6">Upload an image — Gemma 4 analyzes everything automatically</p>
         <UploadZone onFile={handleFile} accept="image/*" />
       </div>
     )
@@ -82,38 +109,17 @@ export default function StaticAnalysis() {
         </div>
       </div>
 
-      {!result && !loading && (
-        <div className="bg-surface border border-border rounded-xl p-4 mb-6">
-          <div className="flex items-start gap-4">
-            <img src={preview} alt="Preview" className="w-24 h-24 object-cover rounded-lg" />
-            <div className="flex-1 space-y-3">
-              <div>
-                <label className="text-xs text-muted uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
-                  <MessageSquare className="w-3 h-3" /> Ad Copy (auto-extracted from image via OCR — edit if needed)
-                </label>
-                <textarea
-                  value={copyText}
-                  onChange={(e) => setCopyText(e.target.value)}
-                  placeholder="Text will be auto-extracted from the image. Override here if needed."
-                  rows={2}
-                  className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent resize-none"
-                />
-              </div>
-              <button
-                onClick={handleAnalyze}
-                className="px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover"
-              >
-                Analyze Ad
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="w-8 h-8 text-accent animate-spin mb-3" />
-          <p className="text-sm text-muted">Analyzing your creative...</p>
+          <p className="text-sm text-muted">Gemma 4 is analyzing your ad...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
+          <p className="text-red-400 text-sm">{error}</p>
+          <button onClick={handleReset} className="mt-3 px-4 py-2 bg-surface border border-border rounded-lg text-sm hover:bg-surface-2">
+            Try Again
+          </button>
         </div>
       ) : result ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -130,7 +136,7 @@ export default function StaticAnalysis() {
                 <img src={preview} alt="Ad" className="rounded-lg max-w-full" />
               )}
               {showHeatmap && result.heatmap && (
-                <div className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-bg/80 backdrop-blur px-2.5 py-1 rounded-lg text-[10px]">
+                <div className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-bg/90 backdrop-blur px-2.5 py-1 rounded-lg text-[10px]">
                   <span className="inline-block w-3 h-2 rounded bg-blue-600" /> Low
                   <span className="inline-block w-3 h-2 rounded bg-green-500" /> Med
                   <span className="inline-block w-3 h-2 rounded bg-yellow-400" /> High
@@ -148,75 +154,88 @@ export default function StaticAnalysis() {
 
             {result.extractedText && (
               <div className="bg-surface border border-border rounded-xl p-4">
-                <h4 className="text-xs text-muted uppercase tracking-wider mb-2">Extracted Text (OCR)</h4>
+                <h4 className="text-xs text-muted uppercase tracking-wider mb-2">Extracted Text</h4>
                 <p className="text-sm text-text/80 italic">"{result.extractedText}"</p>
               </div>
             )}
+
+            <EyeTrackingPath steps={result.eyeTracking} />
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <ScoreCard
-                label="Overall"
-                score={result.overallScore}
-                detail="Combined creative effectiveness"
-              />
-              <ScoreCard
-                label="Visual Appeal"
-                score={result.visualScore}
-                detail="Aesthetics and design quality"
-              />
-              <ScoreCard
-                label="Copy Strength"
-                score={result.copyScore}
-                detail="Messaging effectiveness"
-              />
-              <ScoreCard
-                label="CTA Power"
-                score={result.ctaScore}
-                detail="Call-to-action clarity"
-              />
+              <ScoreCard label="Overall" score={result.overallScore} detail="Combined effectiveness" />
+              <ScoreCard label="Visual Appeal" score={result.visualScore} detail="Aesthetics quality" />
+              <ScoreCard label="Copy Strength" score={result.copyScore} detail="Messaging impact" />
+              <ScoreCard label="CTA Power" score={result.ctaScore} detail="Call-to-action clarity" />
             </div>
 
-            <CreativeDNA data={result.creativeDNA} />
-            <CopyAnalysis data={result.copyAnalysis} />
+            {result.creativeDNA && (
+              <>
+                <ColorPalette colors={result.creativeDNA.colors} />
 
-            {compliance && (
-              <div className="bg-surface border border-border rounded-xl p-4">
-                <h4 className="text-xs text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
-                  <Shield className="w-4 h-4" /> Compliance Check
-                </h4>
-                <div className="space-y-2">
-                  {compliance.checks?.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className={c.pass ? 'text-green' : 'text-red'}>
-                        {c.pass ? '✓' : '✗'}
-                      </span>
-                      <span className="text-muted">{c.rule}</span>
+                <div className="grid grid-cols-2 gap-3">
+                  {result.creativeDNA.composition && (
+                    <div className="bg-surface border border-border rounded-xl p-3">
+                      <span className="text-[10px] text-muted uppercase">Composition</span>
+                      <p className="text-sm font-medium mt-1">{result.creativeDNA.composition.rule}</p>
+                      <p className="text-xs text-muted mt-0.5">{result.creativeDNA.composition.feedback}</p>
                     </div>
-                  ))}
+                  )}
+                  {result.creativeDNA.faces && (
+                    <div className="bg-surface border border-border rounded-xl p-3">
+                      <span className="text-[10px] text-muted uppercase">Faces</span>
+                      <p className="text-sm font-medium mt-1">{result.creativeDNA.faces.count} detected</p>
+                      <p className="text-xs text-muted mt-0.5">{result.creativeDNA.faces.feedback}</p>
+                    </div>
+                  )}
+                  {result.creativeDNA.cta && (
+                    <div className="bg-surface border border-border rounded-xl p-3">
+                      <span className="text-[10px] text-muted uppercase">CTA</span>
+                      <p className="text-sm font-medium mt-1">{result.creativeDNA.cta.text || 'Not detected'}</p>
+                      <p className="text-xs text-muted mt-0.5">{result.creativeDNA.cta.feedback}</p>
+                    </div>
+                  )}
+                  {result.creativeDNA.typography && (
+                    <div className="bg-surface border border-border rounded-xl p-3">
+                      <span className="text-[10px] text-muted uppercase">Typography</span>
+                      <p className="text-sm font-medium mt-1">{result.creativeDNA.typography.style}</p>
+                      <p className="text-xs text-muted mt-0.5">{result.creativeDNA.typography.feedback}</p>
+                    </div>
+                  )}
                 </div>
-              </div>
+              </>
             )}
 
-            {result.insights && result.insights.length > 0 && (
-              <div className="bg-surface border border-border rounded-xl p-4">
-                <h4 className="text-xs text-muted uppercase tracking-wider mb-2">Insights</h4>
-                <ul className="space-y-2">
-                  {result.insights.map((insight, i) => (
-                    <li key={i} className="text-sm flex items-start gap-2">
-                      <span className="text-accent mt-0.5">→</span>
-                      {insight}
-                    </li>
-                  ))}
-                </ul>
+            {result.copyAnalysis && (
+              <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
+                <h4 className="text-xs text-muted uppercase tracking-wider">Copy Analysis</h4>
+                <div className="flex gap-3 flex-wrap">
+                  <span className={`px-2 py-0.5 text-xs rounded-full ${result.copyAnalysis.sentiment === 'positive' ? 'bg-green/10 text-green' : result.copyAnalysis.sentiment === 'negative' ? 'bg-red/10 text-red' : 'bg-surface-2 text-muted'}`}>
+                    {result.copyAnalysis.sentiment}
+                  </span>
+                  {result.copyAnalysis.primaryEmotion && (
+                    <span className="px-2 py-0.5 text-xs rounded-full bg-accent/10 text-accent">
+                      {result.copyAnalysis.primaryEmotion}
+                    </span>
+                  )}
+                </div>
+                {result.copyAnalysis.suggestions?.length > 0 && (
+                  <ul className="space-y-1.5">
+                    {result.copyAnalysis.suggestions.map((s, i) => (
+                      <li key={i} className="text-xs flex items-start gap-2">
+                        <span className="text-accent mt-0.5">→</span> {s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
 
             {result.aiInsights && (
               <div className="bg-surface border border-accent/30 rounded-xl p-4">
                 <h4 className="text-xs text-accent uppercase tracking-wider mb-2">Gemma AI Insights</h4>
-                <p className="text-sm whitespace-pre-line">{result.aiInsights}</p>
+                <p className="text-sm whitespace-pre-line leading-relaxed">{result.aiInsights}</p>
               </div>
             )}
           </div>

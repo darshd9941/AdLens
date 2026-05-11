@@ -1,23 +1,13 @@
-import os
 import cv2
 import numpy as np
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Query
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from analyzers.saliency import generate_heatmap, get_attention_description
-from analyzers.creative_dna import (
-    extract_colors, analyze_color_harmony, analyze_composition,
-    detect_faces, detect_cta, analyze_visual_hierarchy,
-)
-from analyzers.copy_analyzer import analyze_copy
-from analyzers.compliance import run_compliance_checks
-from analyzers.scoring import compute_overall_score, compute_visual_score
-from analyzers.video_analyzer import (
-    extract_frames, compute_overall_video_score, detect_pacing,
-)
-from analyzers.ollama_insights import generate_insights, generate_video_insights, ocr_from_image
+from analyzers.ollama_insights import analyze_image, generate_insights, generate_video_insights
+from analyzers.video_analyzer import extract_frames, compute_overall_video_score, detect_pacing
 
 app = FastAPI(title="AdLens API", version="1.0.0")
 
@@ -33,23 +23,13 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 def to_native(val):
-    if isinstance(val, (np.integer,)):
-        return int(val)
-    if isinstance(val, (np.floating,)):
-        return float(val)
-    if isinstance(val, (np.bool_,)):
-        return bool(val)
-    if isinstance(val, np.ndarray):
-        return val.tolist()
+    if hasattr(val, 'item'):
+        return val.item()
+    if isinstance(val, dict):
+        return {k: to_native(v) for k, v in val.items()}
+    if isinstance(val, list):
+        return [to_native(v) for v in val]
     return val
-
-
-def sanitize(obj):
-    if isinstance(obj, dict):
-        return {k: sanitize(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [sanitize(v) for v in obj]
-    return to_native(obj)
 
 
 @app.get("/api/health")
@@ -58,7 +38,7 @@ async def health():
 
 
 @app.post("/api/analyze-image")
-async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
+async def analyze_image_endpoint(file: UploadFile = File(...)):
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -71,96 +51,129 @@ async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
     attention_desc = get_attention_description(heatmap)
     heatmap_list = (heatmap * 255).astype(np.uint8).tolist()
 
-    colors = extract_colors(image)
-    colors_harmony = analyze_color_harmony(colors)
-    composition = analyze_composition(image)
-    faces = detect_faces(image)
-    cta = detect_cta(image)
-    visual_hierarchy = analyze_visual_hierarchy(image)
+    gemma_result = analyze_image(contents)
+
+    if not gemma_result:
+        return JSONResponse({"error": "Gemma could not analyze this image. Make sure Ollama is running with gemma4 loaded."}, status_code=500)
+
+    faces_data = gemma_result.get("faces", {"count": 0, "placement": "unknown"})
+    cta_data = gemma_result.get("cta", {"present": False, "text": "", "placement": "none"})
+    composition = gemma_result.get("composition", {})
+    colors = gemma_result.get("colors", {})
+    text_data = gemma_result.get("text", {})
+    copy_quality = gemma_result.get("copy_quality", {})
+    eye_tracking = gemma_result.get("eye_tracking", {})
+
+    face_count = faces_data.get("count", 0)
+    if face_count == 0:
+        face_score = 40
+        face_feedback = "No faces detected"
+    elif face_count == 1:
+        face_score = 85
+        face_feedback = f"1 face at {faces_data.get('placement', 'unknown')} — strong focal point"
+    elif face_count <= 3:
+        face_score = 70
+        face_feedback = f"{face_count} faces — good social proof"
+    else:
+        face_score = 50
+        face_feedback = f"{face_count} faces — may dilute focus"
+
+    cta_present = cta_data.get("present", False)
+    cta_score = 75 if cta_present else 20
+    cta_feedback = f"CTA: \"{cta_data.get('text', '')}\" at {cta_data.get('placement', 'none')}" if cta_present else "No clear CTA detected — add a button or action text"
+
+    overall_score = gemma_result.get("overall_score", 50)
+    copy_score = copy_quality.get("score", 50)
 
     creative_dna = {
-        "colors": colors,
-        "colors_harmony": colors_harmony,
-        "typography": {
-            "score": composition["score"],
-            "style": "Detected text regions",
-            "feedback": composition["feedback"],
+        "colors": [
+            {"hex": c, "percentage": round(100 / max(len(colors.get("dominant", ["#888888"])), 1), 1)}
+            for c in colors.get("dominant", ["#888888"])
+        ],
+        "colors_harmony": {
+            "score": 70 if colors.get("mood") in ["warm", "cool", "vibrant"] else 40,
+            "feedback": f"Color mood: {colors.get('mood', 'unknown')}"
         },
-        "composition": composition,
-        "faces": faces,
-        "cta": cta,
-        "visualHierarchy": visual_hierarchy,
+        "typography": {
+            "score": 70 if text_data.get("headline") else 30,
+            "style": text_data.get("headline", "No headline detected"),
+            "feedback": f"Brand: {text_data.get('brand', 'Unknown')}"
+        },
+        "composition": {
+            "score": 75 if composition.get("rule_of_thirds") else 45,
+            "rule": f"{'Rule of thirds' if composition.get('rule_of_thirds') else 'No rule of thirds'} + {composition.get('balance', 'unknown')}",
+            "feedback": f"Focal point: {composition.get('focal_point', 'unknown')}"
+        },
+        "faces": {
+            "score": face_score,
+            "count": face_count,
+            "feedback": face_feedback
+        },
+        "cta": {
+            "score": cta_score,
+            "text": cta_data.get("text"),
+            "feedback": cta_feedback
+        },
+        "visualHierarchy": {
+            "score": 60,
+            "flow": " → ".join([eye_tracking.get(f"step{i}", "") for i in range(1, 6) if eye_tracking.get(f"step{i}")]),
+            "feedback": f"Balance: {composition.get('balance', 'unknown')}"
+        },
     }
 
-    compliance = run_compliance_checks(image)
-    visual_score = compute_visual_score(image)
+    copy_result = {
+        "headline": text_data.get("headline", ""),
+        "bodyText": text_data.get("body", "") or text_data.get("all_text", ""),
+        "charCount": len(text_data.get("all_text", "")),
+        "sentiment": copy_quality.get("sentiment", "Neutral"),
+        "sentimentScore": 70 if copy_quality.get("sentiment") == "positive" else 30 if copy_quality.get("sentiment") == "negative" else 50,
+        "primaryEmotion": copy_quality.get("emotion", "Neutral"),
+        "emotions": [{"emotion": copy_quality.get("emotion", "neutral"), "triggers": [], "strength": 1}] if copy_quality.get("emotion") else [],
+        "powerWords": [],
+        "readability": "Auto-analyzed by Gemma 4",
+        "readabilityScore": copy_quality.get("score", 50),
+        "suggestions": copy_quality.get("strengths", []) + [f"Fix: {w}" for w in copy_quality.get("weaknesses", [])],
+        "copyScore": copy_score,
+    }
 
-    ocr_text = ocr_from_image(contents)
-    copy_input = copy_text.strip() if copy_text and copy_text.strip() else ocr_text
+    eye_path = []
+    for i in range(1, 6):
+        step = eye_tracking.get(f"step{i}")
+        if step:
+            eye_path.append(step)
 
-    if copy_input:
-        copy_result = analyze_copy(headline="", body=copy_input, cta="")
-    else:
-        copy_result = analyze_copy(headline="", body="", cta="")
-
-    scores = compute_overall_score(
-        {"score": int(visual_score)},
-        copy_result,
-        creative_dna,
-    )
-
-    result = {
-        "imageWidth": int(w),
-        "imageHeight": int(h),
+    result = to_native({
+        "imageWidth": w,
+        "imageHeight": h,
         "heatmap": heatmap_list,
         "attention": attention_desc,
-        "extractedText": ocr_text,
+        "extractedText": text_data.get("all_text", ""),
         "creativeDNA": creative_dna,
         "copyAnalysis": copy_result,
-        "compliance": compliance,
-        "overallScore": scores["overallScore"],
-        "visualScore": scores["visualScore"],
-        "copyScore": scores["copyScore"],
-        "ctaScore": scores["ctaScore"],
-        "insights": scores["insights"],
-    }
+        "overallScore": overall_score,
+        "visualScore": copy_score,
+        "copyScore": copy_score,
+        "ctaScore": cta_score,
+        "eyeTracking": eye_path,
+        "insights": copy_quality.get("strengths", []),
+    })
 
     ollama_context = {
-        "overallScore": scores["overallScore"],
-        "visualScore": scores["visualScore"],
-        "copyScore": scores["copyScore"],
-        "ctaScore": scores["ctaScore"],
-        "sentiment": copy_result.get("sentiment"),
-        "emotions": [e["emotion"] for e in copy_result.get("emotions", [])],
-        "powerWords": copy_result.get("powerWords", []),
-        "readability": copy_result.get("readability"),
-        "topColors": [c["hex"] for c in colors[:3]],
-        "faces": faces["count"] if isinstance(faces, dict) else len(faces),
-        "composition": composition.get("rule"),
-        "extractedText": ocr_text[:200] if ocr_text else "None",
+        "overallScore": overall_score,
+        "visualScore": copy_score,
+        "copyScore": copy_score,
+        "ctaScore": cta_score,
+        "sentiment": copy_quality.get("sentiment"),
+        "emotion": copy_quality.get("emotion"),
+        "colors": colors.get("dominant"),
+        "faces": face_count,
+        "composition": composition.get("balance"),
+        "cta": cta_data.get("text") if cta_present else "None",
+        "extractedText": text_data.get("all_text", "")[:200],
     }
-    ai_insights = generate_insights(ollama_context)
-    result["aiInsights"] = ai_insights
+    result["aiInsights"] = generate_insights(ollama_context)
 
-    return sanitize(result)
-
-
-@app.post("/api/analyze-copy")
-async def analyze_copy_endpoint(file: UploadFile = File(...)):
-    contents = await file.read()
-    text = contents.decode("utf-8", errors="ignore")
-    result = analyze_copy(headline=text[:100], body=text)
     return result
-
-
-@app.post("/api/check-compliance")
-async def check_compliance(file: UploadFile = File(...)):
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if image is None:
-        return JSONResponse({"error": "Invalid image"}, status_code=400)
-    return sanitize(run_compliance_checks(image))
 
 
 @app.post("/api/analyze-video")
@@ -183,7 +196,7 @@ async def analyze_video(file: UploadFile = File(...)):
         }
         ai_insights = generate_video_insights(video_context)
 
-        result = sanitize({
+        result = to_native({
             **scores,
             "frames": frames,
             "motionData": motion_data,
@@ -195,7 +208,7 @@ async def analyze_video(file: UploadFile = File(...)):
 
 
 @app.get("/api/competitor-search")
-async def competitor_search(q: str = Query(...)):
+async def competitor_search(q: str = ""):
     page_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={q}"
     ads = [{
         "pageName": f"Results for '{q}'",

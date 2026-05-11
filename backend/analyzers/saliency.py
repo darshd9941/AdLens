@@ -33,8 +33,15 @@ def compute_saliency_map(image: np.ndarray) -> np.ndarray:
 
 def detect_faces(image: np.ndarray) -> list:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = CASCADE_FACE.detectMultiScale(gray, 1.1, 4)
-    return [(int(x), int(y), int(w), int(h)) for (x, y, w, h) in faces]
+    h, w = gray.shape
+    min_face_size = int(min(h, w) * 0.08)
+    faces = CASCADE_FACE.detectMultiScale(gray, 1.3, 5, minSize=(min_face_size, min_face_size))
+    filtered = []
+    for (x, y, fw, fh) in faces:
+        aspect = fw / fh
+        if 0.4 < aspect < 2.5 and fw > min_face_size and fh > min_face_size:
+            filtered.append((int(x), int(y), int(fw), int(fh)))
+    return filtered
 
 
 def detect_text_regions(image: np.ndarray) -> list:

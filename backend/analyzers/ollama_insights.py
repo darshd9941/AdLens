@@ -1,109 +1,104 @@
 import json
 import base64
 import urllib.request
+import re
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL = "gemma4"
 
 
-def ocr_from_image(image_bytes: bytes) -> str:
-    """Use Gemma 4 vision to extract text from an image."""
-    img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+def _call_gemma(prompt: str, image_bytes: bytes = None, timeout: int = 60) -> str:
+    payload = {
+        "model": MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {"temperature": 0.2, "num_predict": 2000}
+    }
+    if image_bytes:
+        payload["images"] = [base64.b64encode(image_bytes).decode("utf-8")]
 
-    prompt = "Extract ALL text from this image. Output only the text you see, nothing else. Preserve the original spacing and line breaks as much as possible."
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(OLLAMA_URL, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode()).get("response", "")
 
+
+def _parse_json(text: str) -> dict:
     try:
-        data = json.dumps({
-            "model": MODEL,
-            "prompt": prompt,
-            "images": [img_b64],
-            "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 1000}
-        }).encode("utf-8")
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            return json.loads(match.group())
+    except json.JSONDecodeError:
+        pass
+    return {}
 
-        req = urllib.request.Request(
-            OLLAMA_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            result = json.loads(resp.read().decode())
-            return result.get("response", "").strip()
-    except Exception as e:
-        return ""
+
+def analyze_image(image_bytes: bytes) -> dict:
+    prompt = """Analyze this advertisement image. Return ONLY a JSON object with these exact fields (no markdown, no explanation, just the JSON):
+
+{
+  "faces": {
+    "count": <number of human faces visible>,
+    "placement": "<where faces are: top-left, center, bottom-right, etc>"
+  },
+  "cta": {
+    "present": <true/false - is there a clear call-to-action button or text like "Shop Now", "Buy Now", "Learn More", "Sign Up", "Order Now">,
+    "text": "<exact CTA text if present, or empty string>",
+    "placement": "<where CTA is: top, center, bottom-left, bottom-right, etc>"
+  },
+  "composition": {
+    "rule_of_thirds": <true/false - do key elements align with rule-of-thirds grid>,
+    "balance": "<left-heavy, right-heavy, top-heavy, bottom-heavy, or balanced>",
+    "focal_point": "<what draws the eye first>"
+  },
+  "colors": {
+    "dominant": ["<hex color 1>", "<hex color 2>", "<hex color 3>"],
+    "mood": "<warm, cool, neutral, vibrant, muted>"
+  },
+  "text": {
+    "headline": "<main headline text in the ad>",
+    "body": "<body/description text>",
+    "brand": "<brand name visible>",
+    "all_text": "<all text combined>"
+  },
+  "copy_quality": {
+    "score": <1-100>,
+    "sentiment": "<positive, negative, neutral>",
+    "emotion": "<primary emotion: urgency, trust, excitement, calm, luxury, value>",
+    "strengths": ["<strength 1>", "<strength 2>"],
+    "weaknesses": ["<weakness 1>", "<weakness 2>"]
+  },
+  "overall_score": <1-100 how effective is this ad>,
+  "eye_tracking": {
+    "step1": "<what the eye sees first>",
+    "step2": "<what the eye sees second>",
+    "step3": "<what the eye sees third>",
+    "step4": "<what the eye sees fourth>",
+    "step5": "<what the eye sees last>"
+  }
+}
+
+IMPORTANT: If there is NO call-to-action button or text like "Shop Now", "Buy", "Sign Up", set cta.present to false. Do NOT assume text overlays or headlines are CTAs. Only actual action buttons or action text count as CTAs."""
+
+    response = _call_gemma(prompt, image_bytes)
+    return _parse_json(response)
 
 
 def generate_insights(analysis_data: dict) -> str:
-    """Use Gemma 4 to generate ad analysis insights."""
     prompt = f"""You are an expert ad creative analyst. Based on this analysis data, give 3-4 actionable insights in plain English. Be direct and specific. No fluff.
 
 Analysis Data:
-- Overall Score: {analysis_data.get('overallScore', 'N/A')}/100
-- Visual Score: {analysis_data.get('visualScore', 'N/A')}/100
-- Copy Score: {analysis_data.get('copyScore', 'N/A')}/100
-- CTA Score: {analysis_data.get('ctaScore', 'N/A')}/100
-- Sentiment: {analysis_data.get('sentiment', 'N/A')}
-- Emotions: {analysis_data.get('emotions', 'None detected')}
-- Power Words: {analysis_data.get('powerWords', 'None')}
-- Readability: {analysis_data.get('readability', 'N/A')}
-- Colors: {analysis_data.get('topColors', 'N/A')}
-- Faces Detected: {analysis_data.get('faces', 'N/A')}
-- Composition: {analysis_data.get('composition', 'N/A')}
-- Extracted Text: {analysis_data.get('extractedText', 'None')}
+{json.dumps(analysis_data, indent=2)}
 
 Give your analysis as 3-4 short bullet points. Each should be one actionable sentence."""
-
-    try:
-        data = json.dumps({
-            "model": MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.4, "num_predict": 500}
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            OLLAMA_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            return result.get("response", "Could not generate insights.")
-    except Exception as e:
-        return f"Ollama not available ({e}). Start Ollama and try again."
+    return _call_gemma(prompt, timeout=30)
 
 
 def generate_video_insights(video_data: dict) -> str:
-    """Use Gemma 4 to generate video analysis insights."""
     prompt = f"""You are an expert cinematic ad analyst. Based on this video analysis, give 3-4 actionable insights. Be direct.
 
 Video Scores:
-- Overall: {video_data.get('overallScore', 'N/A')}/100
-- Composition: {video_data.get('compositionScore', 'N/A')}/100
-- Color Grading: {video_data.get('colorScore', 'N/A')}/100
-- Lighting: {video_data.get('lightingScore', 'N/A')}/100
-- Motion: {video_data.get('motionScore', 'N/A')}/100
-- Pacing: {video_data.get('pacingScore', 'N/A')}/100
-- Detected Cuts: {video_data.get('cuts', 'N/A')}
-- Pacing Type: {video_data.get('pacingType', 'N/A')}
+{json.dumps(video_data, indent=2)}
 
 Give 3-4 short actionable bullet points."""
-
-    try:
-        data = json.dumps({
-            "model": MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.4, "num_predict": 500}
-        }).encode("utf-8")
-
-        req = urllib.request.Request(
-            OLLAMA_URL,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode())
-            return result.get("response", "Could not generate insights.")
-    except Exception as e:
-        return f"Ollama not available ({e})."
+    return _call_gemma(prompt, timeout=30)
