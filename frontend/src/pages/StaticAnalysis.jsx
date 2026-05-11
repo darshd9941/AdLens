@@ -3,7 +3,8 @@ import { Loader2, RotateCcw, Eye, Flame, ArrowRight } from 'lucide-react'
 import UploadZone from '../components/UploadZone'
 import ScoreCard from '../components/ScoreCard'
 import HeatmapOverlay from '../components/HeatmapOverlay'
-import EyeTrackingOverlay from '../components\EyeTrackingOverlay'
+import EyeTrackingOverlay from '../components/EyeTrackingOverlay'
+import SimulationPanel from '../components/SimulationPanel'
 import { uploadImage } from '../utils/api'
 
 function EyeTrackingPath({ steps }) {
@@ -274,6 +275,9 @@ export default function StaticAnalysis() {
             )}
           </div>
         </div>
+
+        {/* Full Width Simulation */}
+        <SimulationPanel analysis={result} />
       ) : null}
     </div>
   )

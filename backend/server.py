@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from analyzers.saliency import generate_heatmap, get_attention_description
 from analyzers.ollama_insights import analyze_image, generate_insights, generate_video_insights
 from analyzers.video_analyzer import extract_frames, compute_overall_video_score, detect_pacing
+from analyzers.simulation import simulate_india_performance, generate_ab_tests, get_best_posting_times, generate_report
 
 app = FastAPI(title="AdLens API", version="1.0.0")
 
@@ -205,6 +206,35 @@ async def analyze_video(file: UploadFile = File(...)):
         return result
     finally:
         tmp_path.unlink(missing_ok=True)
+
+
+@app.post("/api/simulate")
+async def simulate(
+    overallScore: int = 50,
+    copyScore: int = 50,
+    ctaScore: int = 50,
+    visualScore: int = 50,
+    industry: str = "default",
+    dailyBudget: int = 1000,
+    extractedText: str = "",
+):
+    analysis = {
+        "overallScore": overallScore,
+        "copyScore": copyScore,
+        "ctaScore": ctaScore,
+        "visualScore": visualScore,
+        "extractedText": extractedText,
+    }
+    simulation = simulate_india_performance(analysis, industry, dailyBudget)
+    ab_tests = generate_ab_tests(analysis)
+    posting = get_best_posting_times(industry)
+    report = generate_report(simulation, simulation, ab_tests, posting)
+    return to_native({
+        "simulation": simulation,
+        "abTests": ab_tests,
+        "postingSchedule": posting,
+        "report": report,
+    })
 
 
 @app.get("/api/competitor-search")
