@@ -15,8 +15,9 @@ from analyzers.copy_analyzer import analyze_copy
 from analyzers.compliance import run_compliance_checks
 from analyzers.scoring import compute_overall_score
 from analyzers.video_analyzer import (
-    extract_frames, compute_overall_video_score,
+    extract_frames, compute_overall_video_score, detect_pacing,
 )
+from analyzers.ollama_insights import generate_insights, generate_video_insights
 
 app = FastAPI(title="AdLens API", version="1.0.0")
 
@@ -29,6 +30,26 @@ app.add_middleware(
 
 UPLOAD_DIR = Path(__file__).parent / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+def to_native(val):
+    if isinstance(val, (np.integer,)):
+        return int(val)
+    if isinstance(val, (np.floating,)):
+        return float(val)
+    if isinstance(val, (np.bool_,)):
+        return bool(val)
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    return val
+
+
+def sanitize(obj):
+    if isinstance(obj, dict):
+        return {k: sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [sanitize(v) for v in obj]
+    return to_native(obj)
 
 
 @app.get("/api/health")
@@ -73,15 +94,16 @@ async def analyze_image(file: UploadFile = File(...)):
 
     copy_result = analyze_copy(headline="", body="", cta="")
     compliance = run_compliance_checks(image)
+
     scores = compute_overall_score(
-        {"score": composition["score"]},
+        {"score": int(composition["score"])},
         copy_result,
         creative_dna,
     )
 
-    return {
-        "imageWidth": w,
-        "imageHeight": h,
+    result = {
+        "imageWidth": int(w),
+        "imageHeight": int(h),
         "heatmap": heatmap_list,
         "attention": attention_desc,
         "creativeDNA": creative_dna,
@@ -93,6 +115,24 @@ async def analyze_image(file: UploadFile = File(...)):
         "ctaScore": scores["ctaScore"],
         "insights": scores["insights"],
     }
+
+    ollama_context = {
+        "overallScore": scores["overallScore"],
+        "visualScore": scores["visualScore"],
+        "copyScore": scores["copyScore"],
+        "ctaScore": scores["ctaScore"],
+        "sentiment": copy_result.get("sentiment"),
+        "emotions": [e["emotion"] for e in copy_result.get("emotions", [])],
+        "powerWords": copy_result.get("powerWords", []),
+        "readability": copy_result.get("readability"),
+        "topColors": [c["hex"] for c in colors[:3]],
+        "faces": faces["count"] if isinstance(faces, dict) else len(faces),
+        "composition": composition.get("rule"),
+    }
+    ai_insights = generate_insights(ollama_context)
+    result["aiInsights"] = ai_insights
+
+    return sanitize(result)
 
 
 @app.post("/api/analyze-copy")
@@ -110,7 +150,7 @@ async def check_compliance(file: UploadFile = File(...)):
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if image is None:
         return JSONResponse({"error": "Invalid image"}, status_code=400)
-    return run_compliance_checks(image)
+    return sanitize(run_compliance_checks(image))
 
 
 @app.post("/api/analyze-video")
@@ -123,47 +163,39 @@ async def analyze_video(file: UploadFile = File(...)):
     try:
         frames = extract_frames(str(tmp_path), max_frames=15)
         scores = compute_overall_video_score(frames)
-        motion_data = [f["score"] / 100.0 for f in frames]
+        pacing = detect_pacing(frames)
+        motion_data = [float(f["score"]) / 100.0 for f in frames]
 
-        return {
+        video_context = {
+            **scores,
+            "cuts": pacing.get("cuts", 0),
+            "pacingType": pacing.get("pacing", "N/A"),
+        }
+        ai_insights = generate_video_insights(video_context)
+
+        result = sanitize({
             **scores,
             "frames": frames,
             "motionData": motion_data,
-        }
+            "aiInsights": ai_insights,
+        })
+        return result
     finally:
         tmp_path.unlink(missing_ok=True)
 
 
 @app.get("/api/competitor-search")
 async def competitor_search(q: str = Query(...)):
-    ads = []
-
-    try:
-        import urllib.request
-        import json
-
-        search_url = (
-            f"https://www.facebook.com/ads/library/api/"
-            f"?active_status=active"
-            f"&ad_reached_countries=['ALL']"
-            f"&search_term={q}"
-            f"&limit=10"
-        )
-
-        page_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={q}"
-
-        ads = [{
-            "pageName": f"Results for '{q}'",
-            "headline": "View on Meta Ads Library",
-            "body": f"Click the link to see active ads for '{q}' on Meta's public Ads Library.",
-            "libraryUrl": page_url,
-            "startDate": "Active",
-            "platforms": ["Facebook", "Instagram"],
-            "thumbnail": None,
-        }]
-    except Exception:
-        pass
-
+    page_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={q}"
+    ads = [{
+        "pageName": f"Results for '{q}'",
+        "headline": "View on Meta Ads Library",
+        "body": f"Click to see all active ads for '{q}' on Meta's public Ads Library.",
+        "libraryUrl": page_url,
+        "startDate": "Active",
+        "platforms": ["Facebook", "Instagram"],
+        "thumbnail": None,
+    }]
     return {"query": q, "ads": ads}
 
 

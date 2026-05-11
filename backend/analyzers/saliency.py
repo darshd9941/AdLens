@@ -3,14 +3,31 @@ import numpy as np
 from pathlib import Path
 
 CASCADE_FACE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-CASCADE_EYE = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_eye.xml")
 
 
 def compute_saliency_map(image: np.ndarray) -> np.ndarray:
-    saliency = cv2.saliency.StaticSaliencySpectralResidual_create()
-    success, saliency_map = saliency.computeSaliency(image)
-    if not success:
-        return np.zeros(image.shape[:2], dtype=np.float32)
+    """Spectral Residual saliency — pure numpy/FFT, no cv2.saliency needed."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    resized = cv2.resize(gray, (64, 64))
+    resized = resized / 255.0
+
+    fft = np.fft.fft2(resized)
+    magnitude = np.abs(fft)
+    phase = np.angle(fft)
+
+    log_mag = np.log(magnitude + 1e-6)
+    avg_log_mag = cv2.blur(log_mag, (3, 3))
+    spectral_residual = log_mag - avg_log_mag
+
+    saliency_fft = np.exp(spectral_residual) * np.exp(1j * phase)
+    saliency_map = np.abs(np.fft.ifft2(saliency_fft)) ** 2
+
+    saliency_map = cv2.GaussianBlur(saliency_map, (9, 9), 2.5)
+    saliency_map = cv2.resize(saliency_map, (image.shape[1], image.shape[0]))
+
+    if saliency_map.max() > 0:
+        saliency_map = saliency_map / saliency_map.max()
+
     return saliency_map.astype(np.float32)
 
 

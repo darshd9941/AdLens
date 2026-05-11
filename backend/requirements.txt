@@ -5,3 +5,8 @@ opencv-python-headless
 numpy
 Pillow
 scikit-learn
+transformers
+torch
+torchvision
+vaderSentiment
+textstat

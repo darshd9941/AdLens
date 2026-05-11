@@ -7,12 +7,12 @@ def check_text_to_image_ratio(image: np.ndarray) -> dict:
     _, binary = __import__("cv2").threshold(gray, 200, 255, __import__("cv2").THRESH_BINARY)
 
     total_pixels = binary.shape[0] * binary.shape[1]
-    text_pixels = np.sum(binary == 255)
+    text_pixels = int(np.sum(binary == 255))
     ratio = (text_pixels / total_pixels) * 100
 
     return {
         "rule": "Text-to-image ratio (20% rule)",
-        "pass": ratio <= 20,
+        "pass": bool(ratio <= 20),
         "detail": f"{ratio:.1f}% text coverage",
         "warning": f"Text covers {ratio:.1f}% — exceeds Meta's 20% guideline" if ratio > 20 else None
     }
@@ -62,7 +62,7 @@ def check_forbidden_words(text: str) -> dict:
 
     return {
         "rule": "Forbidden/clickbait words",
-        "pass": len(found) == 0,
+        "pass": bool(len(found) == 0),
         "detail": f"Found: {', '.join(found)}" if found else "None detected"
     }
 
@@ -74,15 +74,15 @@ def check_brand_elements(image: np.ndarray) -> dict:
     lower_region = gray[int(h * 0.7):, :]
     upper_region = gray[:int(h * 0.3), :]
 
-    lower_edge = __import__("cv2").Canny(lower_region, 50, 150).mean()
-    upper_edge = __import__("cv2").Canny(upper_region, 50, 150).mean()
+    lower_edge = float(__import__("cv2").Canny(lower_region, 50, 150).mean())
+    upper_edge = float(__import__("cv2").Canny(upper_region, 50, 150).mean())
 
     has_lower_focal = lower_edge > 10
     has_upper_content = upper_edge > 10
 
     return {
         "rule": "Layout structure",
-        "pass": has_lower_focal or has_upper_content,
+        "pass": bool(has_lower_focal or has_upper_content),
         "detail": "Content distributed across zones" if (has_lower_focal and has_upper_content)
                    else "Consider adding content to " + ("upper" if not has_upper_content else "lower") + " zone"
     }
