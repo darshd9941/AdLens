@@ -100,6 +100,7 @@ export default function StaticAnalysis() {
           </button>
         </div>
       ) : result ? (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">
             {/* Image + Overlays */}
@@ -278,6 +279,7 @@ export default function StaticAnalysis() {
 
         {/* Full Width Simulation */}
         <SimulationPanel analysis={result} />
+        </>
       ) : null}
     </div>
   )
