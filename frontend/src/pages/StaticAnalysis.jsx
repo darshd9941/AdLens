@@ -89,13 +89,13 @@ export default function StaticAnalysis() {
             <div className="flex-1 space-y-3">
               <div>
                 <label className="text-xs text-muted uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
-                  <MessageSquare className="w-3 h-3" /> Ad Copy (optional — paste the text from your ad)
+                  <MessageSquare className="w-3 h-3" /> Ad Copy (auto-extracted from image via OCR — edit if needed)
                 </label>
                 <textarea
                   value={copyText}
                   onChange={(e) => setCopyText(e.target.value)}
-                  placeholder="e.g. Blocks the Light and styles your room at the same time."
-                  rows={3}
+                  placeholder="Text will be auto-extracted from the image. Override here if needed."
+                  rows={2}
                   className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent resize-none"
                 />
               </div>
@@ -143,6 +143,13 @@ export default function StaticAnalysis() {
               <div className="bg-surface border border-border rounded-xl p-4">
                 <h4 className="text-xs text-muted uppercase tracking-wider mb-2">Attention Flow</h4>
                 <p className="text-sm">{result.attention}</p>
+              </div>
+            )}
+
+            {result.extractedText && (
+              <div className="bg-surface border border-border rounded-xl p-4">
+                <h4 className="text-xs text-muted uppercase tracking-wider mb-2">Extracted Text (OCR)</h4>
+                <p className="text-sm text-text/80 italic">"{result.extractedText}"</p>
               </div>
             )}
           </div>

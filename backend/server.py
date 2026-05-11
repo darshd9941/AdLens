@@ -18,6 +18,7 @@ from analyzers.video_analyzer import (
     extract_frames, compute_overall_video_score, detect_pacing,
 )
 from analyzers.ollama_insights import generate_insights, generate_video_insights
+from analyzers.ocr import extract_text
 
 app = FastAPI(title="AdLens API", version="1.0.0")
 
@@ -92,13 +93,16 @@ async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
         "visualHierarchy": visual_hierarchy,
     }
 
-    if copy_text and copy_text.strip():
-        copy_result = analyze_copy(headline="", body=copy_text.strip(), cta="")
-    else:
-        copy_result = analyze_copy(headline="", body="", cta="")
-
     compliance = run_compliance_checks(image)
     visual_score = compute_visual_score(image)
+
+    ocr_text = extract_text(image)
+    copy_input = copy_text.strip() if copy_text and copy_text.strip() else ocr_text
+
+    if copy_input:
+        copy_result = analyze_copy(headline="", body=copy_input, cta="")
+    else:
+        copy_result = analyze_copy(headline="", body="", cta="")
 
     scores = compute_overall_score(
         {"score": int(visual_score)},
@@ -111,6 +115,7 @@ async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
         "imageHeight": int(h),
         "heatmap": heatmap_list,
         "attention": attention_desc,
+        "extractedText": ocr_text,
         "creativeDNA": creative_dna,
         "copyAnalysis": copy_result,
         "compliance": compliance,
@@ -133,6 +138,7 @@ async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
         "topColors": [c["hex"] for c in colors[:3]],
         "faces": faces["count"] if isinstance(faces, dict) else len(faces),
         "composition": composition.get("rule"),
+        "extractedText": ocr_text[:200] if ocr_text else "None",
     }
     ai_insights = generate_insights(ollama_context)
     result["aiInsights"] = ai_insights
