@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { Loader2, RotateCcw, Eye, ArrowRight } from 'lucide-react'
+import { Loader2, RotateCcw, Eye, Flame, ArrowRight } from 'lucide-react'
 import UploadZone from '../components/UploadZone'
 import ScoreCard from '../components/ScoreCard'
 import HeatmapOverlay from '../components/HeatmapOverlay'
+import EyeTrackingOverlay from '../components\EyeTrackingOverlay'
 import { uploadImage } from '../utils/api'
 
 function EyeTrackingPath({ steps }) {
   if (!steps || steps.length === 0) return null
+  const colors = ['#6366f1', '#3b82f6', '#22c55e', '#eab308', '#ef4444']
   return (
     <div className="bg-surface border border-border rounded-xl p-4">
       <h4 className="text-xs text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -15,7 +17,10 @@ function EyeTrackingPath({ steps }) {
       <div className="space-y-2">
         {steps.map((step, i) => (
           <div key={i} className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-full bg-accent flex items-center justify-center text-white text-xs font-bold shrink-0">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+              style={{ background: colors[i] || '#6366f1' }}
+            >
               {i + 1}
             </div>
             <div className="flex-1 text-sm">{step}</div>
@@ -29,32 +34,12 @@ function EyeTrackingPath({ steps }) {
   )
 }
 
-function ColorPalette({ colors }) {
-  if (!colors || colors.length === 0) return null
-  return (
-    <div className="bg-surface border border-border rounded-xl p-4">
-      <h4 className="text-xs text-muted uppercase tracking-wider mb-3">Color Palette</h4>
-      <div className="flex gap-2 flex-wrap">
-        {colors.map((c, i) => (
-          <div key={i} className="flex flex-col items-center gap-1">
-            <div
-              className="w-10 h-10 rounded-lg border border-border"
-              style={{ background: c.hex || c }}
-            />
-            <span className="text-[10px] text-muted">{c.hex || c}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export default function StaticAnalysis() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [preview, setPreview] = useState(null)
-  const [showHeatmap, setShowHeatmap] = useState(true)
   const [error, setError] = useState(null)
+  const [overlay, setOverlay] = useState('heatmap')
 
   const handleFile = async (file) => {
     setPreview(URL.createObjectURL(file))
@@ -73,8 +58,8 @@ export default function StaticAnalysis() {
   const handleReset = () => {
     setPreview(null)
     setResult(null)
-    setShowHeatmap(true)
     setError(null)
+    setOverlay('heatmap')
   }
 
   if (!preview) {
@@ -92,14 +77,6 @@ export default function StaticAnalysis() {
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-xl font-bold">Analysis Results</h2>
         <div className="flex gap-2">
-          {result && (
-            <button
-              onClick={() => setShowHeatmap(!showHeatmap)}
-              className="px-3 py-1.5 text-xs bg-surface border border-border rounded-lg hover:bg-surface-2"
-            >
-              {showHeatmap ? 'Hide' : 'Show'} Heatmap
-            </button>
-          )}
           <button
             onClick={handleReset}
             className="px-3 py-1.5 text-xs bg-surface border border-border rounded-lg hover:bg-surface-2 flex items-center gap-1.5"
@@ -124,24 +101,66 @@ export default function StaticAnalysis() {
       ) : result ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-4">
+            {/* Image + Overlays */}
             <div className="bg-surface border border-border rounded-xl p-4 relative">
-              {showHeatmap && result.heatmap ? (
+              {overlay === 'heatmap' && result.heatmap ? (
                 <HeatmapOverlay
                   imageUrl={preview}
                   heatmapData={result.heatmap}
                   width={result.imageWidth || 500}
                   height={result.imageHeight || 500}
                 />
+              ) : overlay === 'eye' && result.eyeTracking ? (
+                <EyeTrackingOverlay
+                  imageUrl={preview}
+                  steps={result.eyeTracking}
+                  width={result.imageWidth || 500}
+                  height={result.imageHeight || 500}
+                />
               ) : (
-                <img src={preview} alt="Ad" className="rounded-lg max-w-full" />
+                <img src={preview} alt="Ad" className="rounded-lg w-full h-auto block" />
               )}
-              {showHeatmap && result.heatmap && (
+
+              {/* Heatmap legend */}
+              {overlay === 'heatmap' && result.heatmap && (
                 <div className="absolute bottom-4 right-4 flex items-center gap-1.5 bg-bg/90 backdrop-blur px-2.5 py-1 rounded-lg text-[10px]">
                   <span className="inline-block w-3 h-2 rounded bg-blue-600" /> Low
                   <span className="inline-block w-3 h-2 rounded bg-green-500" /> Med
                   <span className="inline-block w-3 h-2 rounded bg-yellow-400" /> High
                   <span className="inline-block w-3 h-2 rounded bg-red-500" /> Hot
                 </div>
+              )}
+            </div>
+
+            {/* Overlay Toggle Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setOverlay(overlay === 'heatmap' ? 'none' : 'heatmap')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  overlay === 'heatmap'
+                    ? 'bg-accent text-white'
+                    : 'bg-surface border border-border text-muted hover:text-text'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" /> Heatmap
+              </button>
+              <button
+                onClick={() => setOverlay(overlay === 'eye' ? 'none' : 'eye')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                  overlay === 'eye'
+                    ? 'bg-accent text-white'
+                    : 'bg-surface border border-border text-muted hover:text-text'
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" /> Eye Tracking
+              </button>
+              {overlay !== 'none' && (
+                <button
+                  onClick={() => setOverlay('none')}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-surface border border-border text-muted hover:text-text"
+                >
+                  Show Original
+                </button>
               )}
             </div>
 
@@ -172,7 +191,22 @@ export default function StaticAnalysis() {
 
             {result.creativeDNA && (
               <>
-                <ColorPalette colors={result.creativeDNA.colors} />
+                {result.creativeDNA.colors && result.creativeDNA.colors.length > 0 && (
+                  <div className="bg-surface border border-border rounded-xl p-4">
+                    <h4 className="text-xs text-muted uppercase tracking-wider mb-3">Color Palette</h4>
+                    <div className="flex gap-2 flex-wrap">
+                      {result.creativeDNA.colors.map((c, i) => (
+                        <div key={i} className="flex flex-col items-center gap-1">
+                          <div
+                            className="w-10 h-10 rounded-lg border border-border"
+                            style={{ background: c.hex }}
+                          />
+                          <span className="text-[10px] text-muted">{c.hex}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   {result.creativeDNA.composition && (
