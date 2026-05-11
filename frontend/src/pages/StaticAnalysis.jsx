@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Download, RotateCcw, Shield, Copy } from 'lucide-react'
+import { Loader2, RotateCcw, Shield, MessageSquare } from 'lucide-react'
 import UploadZone from '../components/UploadZone'
 import ScoreCard from '../components/ScoreCard'
 import HeatmapOverlay from '../components/HeatmapOverlay'
@@ -13,14 +13,23 @@ export default function StaticAnalysis() {
   const [preview, setPreview] = useState(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
   const [compliance, setCompliance] = useState(null)
+  const [copyText, setCopyText] = useState('')
+  const [file, setFile] = useState(null)
 
-  const handleFile = async (file) => {
-    setPreview(URL.createObjectURL(file))
+  const handleFile = (f) => {
+    setFile(f)
+    setPreview(URL.createObjectURL(f))
+    setResult(null)
+    setCompliance(null)
+  }
+
+  const handleAnalyze = async () => {
+    if (!file) return
     setLoading(true)
     setResult(null)
     setCompliance(null)
     try {
-      const res = await uploadImage(file)
+      const res = await uploadImage(file, copyText)
       setResult(res.data)
       try {
         const comp = await checkCompliance(file)
@@ -37,6 +46,8 @@ export default function StaticAnalysis() {
     setResult(null)
     setCompliance(null)
     setShowHeatmap(true)
+    setCopyText('')
+    setFile(null)
   }
 
   if (!preview) {
@@ -70,6 +81,34 @@ export default function StaticAnalysis() {
           </button>
         </div>
       </div>
+
+      {!result && !loading && (
+        <div className="bg-surface border border-border rounded-xl p-4 mb-6">
+          <div className="flex items-start gap-4">
+            <img src={preview} alt="Preview" className="w-24 h-24 object-cover rounded-lg" />
+            <div className="flex-1 space-y-3">
+              <div>
+                <label className="text-xs text-muted uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                  <MessageSquare className="w-3 h-3" /> Ad Copy (optional — paste the text from your ad)
+                </label>
+                <textarea
+                  value={copyText}
+                  onChange={(e) => setCopyText(e.target.value)}
+                  placeholder="e.g. Blocks the Light and styles your room at the same time."
+                  rows={3}
+                  className="w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent resize-none"
+                />
+              </div>
+              <button
+                onClick={handleAnalyze}
+                className="px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-lg hover:bg-accent-hover"
+              >
+                Analyze Ad
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20">
@@ -155,7 +194,7 @@ export default function StaticAnalysis() {
 
             {result.insights && result.insights.length > 0 && (
               <div className="bg-surface border border-border rounded-xl p-4">
-                <h4 className="text-xs text-muted uppercase tracking-wider mb-2">AI Insights</h4>
+                <h4 className="text-xs text-muted uppercase tracking-wider mb-2">Insights</h4>
                 <ul className="space-y-2">
                   {result.insights.map((insight, i) => (
                     <li key={i} className="text-sm flex items-start gap-2">
@@ -164,6 +203,13 @@ export default function StaticAnalysis() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {result.aiInsights && (
+              <div className="bg-surface border border-accent/30 rounded-xl p-4">
+                <h4 className="text-xs text-accent uppercase tracking-wider mb-2">Gemma AI Insights</h4>
+                <p className="text-sm whitespace-pre-line">{result.aiInsights}</p>
               </div>
             )}
           </div>

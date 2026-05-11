@@ -56,23 +56,37 @@ def analyze_composition(image: np.ndarray) -> dict:
     hotspots = 0
     for th in thirds_h:
         for tw in thirds_w:
-            region = edges[max(0, th - 20):th + 20, max(0, tw - 20):tw + 20]
-            if region.mean() > 30:
+            region = edges[max(0, th - 25):th + 25, max(0, tw - 25):tw + 25]
+            if region.mean() > 20:
                 hotspots += 1
 
-    center_region = gray[h // 4: 3 * h // 4, w // 4: 3 * w // 4]
-    edge_region = gray - center_region.mean()
-    balance = 1.0 - (np.std(edge_region) / (np.mean(np.abs(edge_region)) + 1e-6))
-    balance = max(0, min(1, balance))
+    left_half = gray[:, :w // 2].astype(float)
+    right_half = gray[:, w // 2:].astype(float)
+    left_mean = left_half.mean()
+    right_mean = right_half.mean()
+    balance_lr = 1.0 - abs(left_mean - right_mean) / 255.0
 
-    score = min(95, int(hotspots * 15 + balance * 40 + 20))
+    top_half = gray[:h // 2, :].astype(float)
+    bot_half = gray[h // 2:, :].astype(float)
+    balance_tb = 1.0 - abs(top_half.mean() - bot_half.mean()) / 255.0
+
+    balance = (balance_lr + balance_tb) / 2.0
+
+    center_region = gray[h // 4: 3 * h // 4, w // 4: 3 * w // 4]
+    focal = center_region.std() > 35
+
+    score = min(90, int(hotspots * 12 + balance * 35 + (15 if focal else 0) + 20))
 
     rules = []
     if hotspots >= 2:
         rules.append("Rule of thirds")
-    if balance > 0.6:
+    elif hotspots >= 1:
+        rules.append("Partial rule of thirds")
+    if balance > 0.7:
         rules.append("Well-balanced")
-    if center_region.std() > 40:
+    elif balance > 0.5:
+        rules.append("Reasonably balanced")
+    if focal:
         rules.append("Strong focal point")
 
     return {

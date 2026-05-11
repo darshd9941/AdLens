@@ -13,7 +13,7 @@ from analyzers.creative_dna import (
 )
 from analyzers.copy_analyzer import analyze_copy
 from analyzers.compliance import run_compliance_checks
-from analyzers.scoring import compute_overall_score
+from analyzers.scoring import compute_overall_score, compute_visual_score
 from analyzers.video_analyzer import (
     extract_frames, compute_overall_video_score, detect_pacing,
 )
@@ -58,7 +58,7 @@ async def health():
 
 
 @app.post("/api/analyze-image")
-async def analyze_image(file: UploadFile = File(...)):
+async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -92,11 +92,16 @@ async def analyze_image(file: UploadFile = File(...)):
         "visualHierarchy": visual_hierarchy,
     }
 
-    copy_result = analyze_copy(headline="", body="", cta="")
+    if copy_text and copy_text.strip():
+        copy_result = analyze_copy(headline="", body=copy_text.strip(), cta="")
+    else:
+        copy_result = analyze_copy(headline="", body="", cta="")
+
     compliance = run_compliance_checks(image)
+    visual_score = compute_visual_score(image)
 
     scores = compute_overall_score(
-        {"score": int(composition["score"])},
+        {"score": int(visual_score)},
         copy_result,
         creative_dna,
     )

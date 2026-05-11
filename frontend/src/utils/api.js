@@ -2,9 +2,10 @@ import axios from 'axios'
 
 const api = axios.create({ baseURL: '/api' })
 
-export const uploadImage = (file) => {
+export const uploadImage = (file, copyText = '') => {
   const form = new FormData()
   form.append('file', file)
+  if (copyText) form.append('copy_text', copyText)
   return api.post('/analyze-image', form)
 }
 
