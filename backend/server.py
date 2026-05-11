@@ -17,8 +17,7 @@ from analyzers.scoring import compute_overall_score, compute_visual_score
 from analyzers.video_analyzer import (
     extract_frames, compute_overall_video_score, detect_pacing,
 )
-from analyzers.ollama_insights import generate_insights, generate_video_insights
-from analyzers.ocr import extract_text
+from analyzers.ollama_insights import generate_insights, generate_video_insights, ocr_from_image
 
 app = FastAPI(title="AdLens API", version="1.0.0")
 
@@ -96,7 +95,7 @@ async def analyze_image(file: UploadFile = File(...), copy_text: str = ""):
     compliance = run_compliance_checks(image)
     visual_score = compute_visual_score(image)
 
-    ocr_text = extract_text(image)
+    ocr_text = ocr_from_image(contents)
     copy_input = copy_text.strip() if copy_text and copy_text.strip() else ocr_text
 
     if copy_input:
